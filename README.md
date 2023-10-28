@@ -33,3 +33,68 @@ W: 0, P: 2, S: 0, C: 0
 The names of the rooms must be sorted alphabetically in the output.
 
 Our sales team has promised Apartment And Chair Delivery Limited a solution within 5 days from now. I know that is very ambitious, but as you are our best developer, we all count on you.
+
+# Python implementation notes
+
+The task solution is following:
+
+1. Load floor plan from a text file, assuming the file format in valid, and the plan has all required data.
+
+2. Find all rooms by `(room name)` string pattern.
+
+3. Find and count all known chair types for each room using non-recursive [flood fill algorithm][1] with 4 directions (up, down, left, right) for breadth-first search starting at the room name position that was found at step 2. 
+
+[1]: https://en.wikipedia.org/wiki/Flood_fill
+
+There is a `Plan` class in `chairs-planner.py` with the following methods:
+  - `read(filename)`
+  - `find_rooms()`
+  - `find_chairs(room)`
+
+### Plan.read(filename)
+
+Loads a floor plan from a text file. The plan is ASCII pseudo-graphics like
+```
++----------+-----------+
+| (room 1) |   P       |
+|   W    S | C (room2) |
++----------+-----------+
+|(room3)  /
++--------+
+```
+
+There would be handling of invalid plan structure (inconsistent walls, unknown chair types) in real project.
+
+### Plan.find_rooms()
+
+A room name is a single line text inside parenthesis. We use regexp to find it. Room names are stored with stripped spaces around, and along with the name position on the plan.
+
+This method modifies plan cells by erasing room names after finding them. This allows to avoid edge cases when rooms have names equal to the chair types, e.g. `(room P)` or `(W is not chair here)`
+
+The found rooms are stored in `Plan` instance as a list of `Room` objects, sorted by the room name attribute. 
+
+### Plan.find_chairs(room)
+
+This method uses [Flood-fill algorithm][1] to find all chairs in the specified `room` limited by walls, using the room name as starting point.
+
+This method modifies plan by setting special value `X` for already visited cells.
+
+All known chairs types found during the visiting, will be counted by the chair type in the `room` object. 
+
+
+## Running
+
+All the code is placed in a single `chairs-planner.py` Python3 file. It accepts a file name as a command-line argument, or reads standard input when no file name was supplied:
+
+```
+# read from a file
+$ python3 chairs-planner.py testdata/rooms.txt
+
+# redirect file to stdin
+$ python3 chairs-planner.py < testdata/rooms.txt
+```
+
+Python `unittest` module is used for testing:
+```
+$ python3 -m unittest chairs-planner.py
+``` 
