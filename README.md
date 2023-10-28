@@ -98,3 +98,32 @@ Python `unittest` module is used for testing:
 ```
 $ python3 -m unittest chairs-planner.py
 ``` 
+
+# C++ implementation notes
+
+It's very similar to the Python one. All the code is also in the single `chairs-planner.cpp` file.
+
+
+## Building
+
+Only a C++17 compiler is needed. To compile `chairs-planner` program call `clang++` or `g++` like
+```
+$ c++ -std=c++17 chairs-planner.cpp -o chairs-planner
+``` 
+
+## Running
+
+Program `chairs-planner` accepts a file name as a command-line argument, or reads standard input when no file name was supplied:
+
+```
+# read from a file
+$ ./chairs-planner testdata/rooms.txt
+
+# redirect file to stdin
+$ ./chairs-planner < testdata/rooms.txt
+```
+
+There are several unit tests in the program embedded. These tests could be run with `--test` command-line option:
+```
+$ ./chairs-planner --test
+``` 
