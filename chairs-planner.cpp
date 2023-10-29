@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <vector>
-#include <map>
+#include <set>
 #include <queue>
 
 #include <regex>
@@ -56,12 +56,17 @@ struct Pos {
 using ChairCount = std::array<size_t, std::size(ChairTypes)>;
 
 struct Room {
+    std::string name;
     Pos pos;
     ChairCount chairs{};
 
-    std::string chairs_str(const std::string& name) const {
-        std::string str = name;
-        if (!name.empty()) str += ":\n";
+    Room(const std::string& name, const Pos& pos = {}, const ChairCount& chairs = {})
+        : name(name), pos(pos), chairs(chairs)
+    {
+    }
+
+    std::string chairs_str() const {
+        std::string str;
         const char* delim = "";
         for (size_t i = 0; i < chairs.size(); ++i) {
             str += delim;
@@ -73,19 +78,24 @@ struct Room {
         return str;
     }
 
+    // sort by name
+    bool operator<(const Room& other) const {
+        return this->name < other.name;
+    }
+
     // for tests
     bool operator==(const Room& other) const {
-        return this->pos == other.pos && this->chairs == other.chairs;
+        return this->name == other.name && this->pos == other.pos && this->chairs == other.chairs;
     }
     friend std::ostream& operator<<(std::ostream& os, const Room& room) {
-        return os << "pos: " << room.pos << ", chairs: " << room.chairs_str("");
+        return os << room.name << " at " << room.pos << ", chairs: " << room.chairs_str();
     }
 };
-using Rooms = std::map<std::string, Room>;
+using Rooms = std::vector<Room>;
 
 std::ostream& operator<<(std::ostream& os, const Rooms& rooms) {
-    for (const auto& [name, room] : rooms) {
-        os << name << ": " << room << '\n';
+    for (const auto& room : rooms) {
+        os << room << '\n';
     }
     return os;
 }
@@ -93,20 +103,29 @@ std::ostream& operator<<(std::ostream& os, const Rooms& rooms) {
 class Plan {
 private:
     std::vector<std::string> plan;
-    Rooms rooms;
 public:
-    void clear() {
-        plan.clear();
-        rooms.clear();
-    }
-
     void read(std::istream& input) {
+        plan.clear();
         for (std::string line; std::getline(input, line); line.clear()) {
             plan.push_back(std::move(line));
         }
     }
 
-    Rooms& find_rooms() {
+    std::vector<Room> find_chairs_in_rooms() {
+        std::vector<Room> rooms;
+
+        Room total{"total"}; // pseudo room for total count
+    
+        for (Room room : find_rooms()) {
+            find_chairs(room, total);
+            rooms.push_back(room);
+        }
+        rooms.insert(rooms.begin(), total);
+        return rooms;
+    }
+private:
+    std::set<Room> find_rooms() {
+        std::set<Room> rooms;
         const std::regex pattern("\\(([^)]*)\\)");
         ssize_t y = 0;
         for (auto& line : plan) {
@@ -117,11 +136,10 @@ public:
                 if (name.empty()) {
                     throw std::runtime_error("Empty room name at " + pos.str());
                 }
-                if (const auto it = rooms.find(name); it != rooms.end()) {
-                    throw std::runtime_error("Duplicate room name " + name + ", initially defined at " + it->second.pos.str());
-
+                const auto [existing, inserted] = rooms.emplace(name, pos, ChairCount{});
+                if (!inserted) {
+                    throw std::runtime_error("Duplicate room name " + name + ", initially defined at " + existing->pos.str());
                 }
-                rooms[name].pos = pos;
                 std::fill_n(line.begin() + match.position(), match.length(), ' '); // erase room name in the plan
             } 
             ++y;
@@ -129,7 +147,7 @@ public:
         return rooms;
     }
 
-    void find_chairs(Room& room) {
+    void find_chairs(Room& room, Room& total) {
         // Use non-recursive flood fill algorithm with 4 directions
         // (see https://en.wikipedia.org/wiki/Flood_fill)
         // Visited cells will be marked as X on the plan
@@ -143,6 +161,7 @@ public:
                 continue;
             } else if (const int type = chair_type(cell); type >= 0) {
                 room.chairs[type] += 1;
+                total.chairs[type] += 1;
             }
             cell = Visited;
             for (const auto& [dx, dy] : directions) {
@@ -205,10 +224,15 @@ bool test_char_type() {
 bool test_room() {
     const auto cases = {
         TestCase{"ctor", []{
-            Room room;
-            return room.pos.x == 0
+            const Room room("room");
+            return room.name == "room"
+                && room.pos.x == 0
                 && room.pos.y == 0
                 && std::all_of(room.chairs.begin(), room.chairs.end(), [](size_t count) { return count == 0; });
+        } },
+        TestCase{"chair_str", []{
+            const Room room{ "name", Pos{10, 10}, ChairCount{ 1, 2, 3, 4 } };
+            return room.chairs_str() == "W: 1, P: 2, S: 3, C: 4";
         } },
     };
     return run(cases, "\n  ");
@@ -221,11 +245,7 @@ bool test_plan() {
                 Plan plan;
                 std::istringstream input(data);
                 plan.read(input);
-                Rooms found;
-                for (auto& [name, room] : plan.find_rooms()) {
-                    plan.find_chairs(room);
-                    found[name] = room;
-                }
+                const Rooms found = plan.find_chairs_in_rooms();
                 if (fail) {
                     throw std::runtime_error("Exception expected");
                 }
@@ -299,19 +319,22 @@ bool test_plan() {
     const auto cases = {
         TestCase{"ctor", []{
             Plan plan;
-            return plan.find_rooms().empty();
+            return plan.find_chairs_in_rooms() == Rooms{ Room{"total"} };
         } },
-        test("empty", "", Rooms{}),
-        test("rooms.txt", rooms, Rooms{
-            // { name, Room{ pos, chairs: W P S C } }
-            { "balcony",       Room{ Pos{30, 47}, ChairCount{ 0, 2, 0, 0 } } },
-            { "bathroom",      Room{ Pos{ 2, 26}, ChairCount{ 0, 1, 0, 0 } } },
-            { "closet",        Room{ Pos{ 2,  3}, ChairCount{ 0, 3, 0, 0 } } },
-            { "kitchen",       Room{ Pos{34, 26}, ChairCount{ 4, 0, 0, 0 } } },
-            { "living room",   Room{ Pos{17, 38}, ChairCount{ 7, 0, 2, 0 } } },
-            { "office",        Room{ Pos{32, 15}, ChairCount{ 2, 1, 0, 0 } } },
-            { "sleeping room", Room{ Pos{22,  5}, ChairCount{ 1, 0, 1, 0 } } },
-            { "toilet",        Room{ Pos{ 2, 19}, ChairCount{ 0, 0, 0, 1 } } },
+        test("empty", "", { Room{"total"} }),
+        test("no room name", "()", {}, true),
+        test("duplicate room name", "(A) (A)", {}, true),
+        test("rooms.txt", rooms, {
+            // { name, pos, chairs: W P S C } }
+            Room{ "total",         Pos{ 0,  0}, ChairCount{14, 7, 3, 1 } },
+            Room{ "balcony",       Pos{30, 47}, ChairCount{ 0, 2, 0, 0 } },
+            Room{ "bathroom",      Pos{ 2, 26}, ChairCount{ 0, 1, 0, 0 } },
+            Room{ "closet",        Pos{ 2,  3}, ChairCount{ 0, 3, 0, 0 } },
+            Room{ "kitchen",       Pos{34, 26}, ChairCount{ 4, 0, 0, 0 } },
+            Room{ "living room",   Pos{17, 38}, ChairCount{ 7, 0, 2, 0 } },
+            Room{ "office",        Pos{32, 15}, ChairCount{ 2, 1, 0, 0 } },
+            Room{ "sleeping room", Pos{22,  5}, ChairCount{ 1, 0, 1, 0 } },
+            Room{ "toilet",        Pos{ 2, 19}, ChairCount{ 0, 0, 0, 1 } },
         }),
     };
     return run(cases, "\n  ");
@@ -335,21 +358,9 @@ int main(int argc, char* argv[]) try {
     Plan plan;
     plan.read(filename.empty() ? std::cin : file);
 
-    // find and count chairs
-    std::map<std::string, Room> chairs_per_room;
-    Room& total = chairs_per_room[""]; // pseudo room for total count
-
-    for (auto& [name, room] : plan.find_rooms()) {
-        plan.find_chairs(room);
-        chairs_per_room[name] = room;
-        for (size_t i = 0; i < room.chairs.size(); ++i) {
-            total.chairs[i] += room.chairs[i];
-        }
-    }
-
-    // print results
-    for (const auto& [name, room] : chairs_per_room) {
-        std::cout << room.chairs_str(name.empty() ? "total" : name) << std::endl;
+    // find and print results
+    for (const Room& room : plan.find_chairs_in_rooms()) {
+        std::cout << room.name << ":\n" << room.chairs_str() << std::endl;
     }
     return 0;
 } catch (const std::exception& ex) {
