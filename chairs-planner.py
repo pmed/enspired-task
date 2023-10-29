@@ -24,7 +24,7 @@ class Room:
 
 class Plan:
     def __init__(self):
-        self.clear()
+        self.plan = []
 
     def _get(self, x, y):
         if 0 <= y < len(self.plan) and 0 <= x < len(self.plan[y]):
@@ -36,17 +36,20 @@ class Plan:
         if 0 <= y < len(self.plan) and 0 <= x < len(self.plan[y]):
             self.plan[y] = self.plan[y][:x] + value + self.plan[y][x + 1:]
 
-    def clear(self):
-        self.plan = list[str]()
-        self.rooms = list[Room]()
-
     # read plan as bitmap from a file or stdin (when filename is None), check bounds and shape
     def read(self, filename):
-        self.clear()
+        self.plan = []
         for line in fileinput.input(filename):
             self.plan.append(line)
 
-    def find_rooms(self) -> list[Room]:
+    def find_chairs_in_rooms(self) -> list[Room]:
+        total = Room('total')
+        rooms = self._find_rooms()
+        for room in rooms:
+            self._find_chairs(room, total)
+        return [total, *rooms]
+
+    def _find_rooms(self) -> list[Room]:
         '''
         Returns rooms list sorted by name
         Room names will be erased on self.plan
@@ -71,12 +74,10 @@ class Plan:
             if replaced:
                 self.plan[row] = replaced
 
-        for name, (y, x) in sorted(found.items()):
-            self.rooms.append(Room(name, x, y))
-        return self.rooms
+        return [Room(name, x, y) for name, (y, x) in sorted(found.items())]
 
 
-    def find_chairs(self, room: Room):
+    def _find_chairs(self, room: Room, total: Room):
         '''
         Use non-recursive flood fill algorithm with 4 directions
         (see https://en.wikipedia.org/wiki/Flood_fill)
@@ -93,6 +94,7 @@ class Plan:
             if cell in CHAIR_TYPES:
                 # found a chair
                 room.chairs[cell] += 1
+                total.chairs[cell] += 1
             # mark visited
             self._set(x, y, VISITED)
             # explore all directions (BFS)
@@ -129,7 +131,6 @@ class PlanTests(unittest.TestCase):
     def test_init(self):
         plan = Plan()
         self.assertEqual(plan.plan, [])
-        self.assertEqual(plan.rooms, [])
 
     # Returns the value at the given x, y coordinates when they are within the bounds of the plan
     def test_cell_access(self):
@@ -151,46 +152,34 @@ class PlanTests(unittest.TestCase):
                                      'def',
                                      'gXijklmn'])
 
-    def test_clear(self):
-        plan = Plan()
-        plan.plan = ['+-+',
-                     '| |',
-                     '+-+']
-        plan.rooms = [Room('room1'), Room('room2')]
-        plan.clear()
-        self.assertEqual(plan.plan, [])
-        self.assertEqual(plan.rooms, [])
-
     def test_find_rooms(self):
         plan = Plan()
         plan.plan = ['+-----------------+',
                      '|(A) ( long name )|',
                      '+-----------------+']
     
-        plan.find_rooms()
-        self.assertEqual(len(plan.rooms), 2)
-        self.assertEqual(plan.rooms[0].name, 'A')
-        self.assertEqual(plan.rooms[0].x, 1)
-        self.assertEqual(plan.rooms[0].y, 1)
-        self.assertEqual(plan.rooms[1].name, 'long name')
-        self.assertEqual(plan.rooms[1].x, 5)
-        self.assertEqual(plan.rooms[1].y, 1)
+        rooms = plan._find_rooms()
+        self.assertEqual(len(rooms), 2)
+        self.assertEqual(rooms[0].name, 'A')
+        self.assertEqual(rooms[0].x, 1)
+        self.assertEqual(rooms[0].y, 1)
+        self.assertEqual(rooms[1].name, 'long name')
+        self.assertEqual(rooms[1].x, 5)
+        self.assertEqual(rooms[1].y, 1)
         self.assertEqual(plan.plan, ['+-----------------+',
                                      '|                 |',
                                      '+-----------------+'])
         # second call finds nothing more
-        plan.find_rooms()
-        self.assertEqual(len(plan.rooms), 2)
-        self.assertEqual(plan.rooms[0].name, 'A')
-        self.assertEqual(plan.rooms[1].name, 'long name')
+        rooms = plan._find_rooms()
+        self.assertEqual(len(rooms), 0)
 
     def test_find_no_rooms(self):
         plan = Plan()
         plan.plan = ['+----+',
                      '|    |',
                      '+----+']
-        plan.find_rooms()
-        self.assertEqual(plan.rooms, [])
+        rooms = plan._find_rooms()
+        self.assertEqual(rooms, [])
         self.assertEqual(plan.plan, ['+----+',
                                      '|    |',
                                      '+----+'])
@@ -201,7 +190,7 @@ class PlanTests(unittest.TestCase):
                      '|()|',
                      '+-+']
         with self.assertRaises(RuntimeError):
-            plan.find_rooms()
+            plan._find_rooms()
 
     def test_duplicate_room_name(self):
         plan = Plan()
@@ -210,7 +199,7 @@ class PlanTests(unittest.TestCase):
                      '|(A)|',
                      '+-+']
         with self.assertRaises(RuntimeError):
-            plan.find_rooms()
+            plan._find_rooms()
 
     def test_find_chairs(self):
         plan = Plan()
@@ -267,11 +256,11 @@ class PlanTests(unittest.TestCase):
                            +---------------------+
 """.splitlines()
         # find chairs
-        found = dict()
-        for room in plan.find_rooms():
-            plan.find_chairs(room)
+        found = {}
+        for room in plan.find_chairs_in_rooms():
             found[room.name] = room.chairs
         self.assertEqual(found, {
+            'total': {'W': 14, 'P': 7, 'S': 3, 'C': 1 },
             'balcony': { 'W': 0, 'P': 2, 'S': 0, 'C': 0 },
             'bathroom': { 'W': 0, 'P': 1, 'S': 0, 'C': 0 },
             'closet': { 'W': 0, 'P': 3, 'S': 0, 'C': 0 },
@@ -293,20 +282,10 @@ def main():
     plan = Plan()
     plan.read(filename)
 
-    rooms = plan.find_rooms()
-
-    chairs_per_room = []
-    total = Room('total')
-    chairs_per_room.append(total) # append pseudo room to print total chairs first
-
-    for room in rooms:
-        plan.find_chairs(room)
-        chairs_per_room.append(room)
-        for type, count in room.chairs.items():
-            total.chairs[type] += count
+    rooms = plan.find_chairs_in_rooms()
 
     # output in specified format
-    for room in chairs_per_room:
+    for room in rooms:
         print(f'{room.name}:\n{room.chairs_str()}')
 
 if __name__ == '__main__':
