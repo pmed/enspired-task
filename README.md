@@ -46,10 +46,13 @@ The task solution is following:
 
 [1]: https://en.wikipedia.org/wiki/Flood_fill
 
-There is a `Plan` class in `chairs-planner.py` with the following methods:
+There is a `Plan` class in `chairs-planner.py` with the following public methods:
   - `read(filename)`
-  - `find_rooms()`
-  - `find_chairs(room)`
+  - `find_chairs_in_rooms()`
+
+and with helper methods:
+  - `_find_rooms()`
+  - `_find_chairs(room, total)`
 
 ### Plan.read(filename)
 
@@ -65,7 +68,12 @@ Loads a floor plan from a text file. The plan is ASCII pseudo-graphics like
 
 There would be handling of invalid plan structure (inconsistent walls, unknown chair types) in real project.
 
-### Plan.find_rooms()
+### Plan.find_chairs_in_rooms()
+
+This is the main method to find rooms and chairs on the floor plan. This method returns a list of `Room` objects with the first item `total` pseud-room that counts all chairs by type.
+
+
+### Plan._find_rooms()
 
 A room name is a single line text inside parenthesis. We use regexp to find it. Room names are stored with stripped spaces around, and along with the name position on the plan.
 
@@ -73,13 +81,13 @@ This method modifies plan cells by erasing room names after finding them. This a
 
 The found rooms are stored in `Plan` instance as a list of `Room` objects, sorted by the room name attribute. 
 
-### Plan.find_chairs(room)
+### Plan._find_chairs(room, total)
 
 This method uses [Flood-fill algorithm][1] to find all chairs in the specified `room` limited by walls, using the room name as starting point.
 
 This method modifies plan by setting special value `X` for already visited cells.
 
-All known chairs types found during the visiting, will be counted by the chair type in the `room` object. 
+All known chairs types found during the visiting, will be counted by the chair type in the `room` object, and additionally counted in the `total` pseudo-room object.
 
 
 ## Running
